@@ -346,7 +346,7 @@ def generate_rtp2httpd_config(channels):
     content = """[global]
 verbosity = 3
 maxclients = 50
-worker = 4
+workers = 4
 buffer-pool-max-size = 49152
 
 [bind]
