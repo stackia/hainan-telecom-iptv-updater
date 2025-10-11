@@ -348,6 +348,7 @@ verbosity = 3
 maxclients = 50
 workers = 4
 buffer-pool-max-size = 49152
+video-snapshot = yes
 
 [bind]
 * 5140
