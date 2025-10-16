@@ -350,6 +350,8 @@ workers = 4
 buffer-pool-max-size = 49152
 video-snapshot = yes
 ffmpeg-args = -hwaccel vaapi
+upstream-interface-unicast = eth0
+upstream-interface-multicast = eth0
 
 [bind]
 * 5140
