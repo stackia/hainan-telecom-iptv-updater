@@ -249,6 +249,12 @@ def channel_list():
     #     {**channel, "columnname": columns[channel["columnId"]]} for channel in channels
     # ]
 
+    with open("web/raw-response.html", "w") as f:
+        f.write(res.text.strip())
+
+    with open("web/channels.json", "w") as f:
+        f.write(json.dumps(channels, indent=2, ensure_ascii=False))
+
     return channels
 
 
