@@ -366,7 +366,7 @@ upstream-interface-multicast = eth0
 """
     for channel in channels:
         if channel["TimeShift"] == "1" and channel["TimeShiftURL"]:
-            content += "timeshift/{} RTSP {}\n".format(
+            content += "timeshift/{} {}\n".format(
                 channel["ChannelURL"].replace("igmp://", ""), channel["TimeShiftURL"]
             )
     return content
