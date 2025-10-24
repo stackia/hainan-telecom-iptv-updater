@@ -358,6 +358,7 @@ video-snapshot = yes
 ffmpeg-args = -hwaccel vaapi
 upstream-interface-unicast = eth0
 upstream-interface-multicast = eth0
+hostname = router.ccca.cc
 
 [bind]
 * 5140
