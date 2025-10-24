@@ -364,11 +364,56 @@ upstream-interface-multicast = eth0
 
 [services]
 """
+    # 构建组播地址到 TimeShiftURL 的映射
+    multicast_to_timeshift = {}
     for channel in channels:
         if channel["TimeShift"] == "1" and channel["TimeShiftURL"]:
-            content += "timeshift/{} {}\n".format(
-                channel["ChannelURL"].replace("igmp://", ""), channel["TimeShiftURL"]
-            )
+            # 从 ChannelURL 提取组播地址 (例如: igmp://239.253.64.120:5140 -> 239.253.64.120:5140)
+            multicast_addr = channel["ChannelURL"].replace("igmp://", "")
+            multicast_to_timeshift[multicast_addr] = channel["TimeShiftURL"]
+
+    # 抓取远程 M3U 文件
+    try:
+        m3u_url = "https://gist.githubusercontent.com/stackia/9dba21f67df6cd3226d4776960ee289b/raw/"
+        m3u_response = requests.get(m3u_url, timeout=10)
+        m3u_response.raise_for_status()
+        m3u_content = m3u_response.text
+
+        # 处理 M3U 内容
+        lines = m3u_content.split("\n")
+        processed_lines = []
+
+        for line in lines:
+            # 检查是否是 #EXTINF 行
+            if line.startswith("#EXTINF"):
+                # 查找 catchup-source
+                if 'catchup-source="rtsp://placeholder/' in line:
+                    # 提取组播地址
+                    match = re.search(
+                        r'catchup-source="rtsp://placeholder/([^"]+)"', line
+                    )
+                    if match:
+                        multicast_addr = match.group(1)
+                        # 查找对应的 TimeShiftURL
+                        if multicast_addr in multicast_to_timeshift:
+                            timeshift_url = multicast_to_timeshift[multicast_addr]
+                            # 添加额外的参数
+                            new_catchup_source = f"{timeshift_url}&playseek={{utc:YmdHMS}}-{{utcend:YmdHMS}}"
+                            # 替换整个 catchup-source
+                            line = re.sub(
+                                r'catchup-source="[^"]*"',
+                                f'catchup-source="{new_catchup_source}"',
+                                line,
+                            )
+            processed_lines.append(line)
+
+        # 将处理后的 M3U 内容添加到 [services] 后面
+        content += "\n".join(processed_lines)
+        content += "\n"
+
+    except Exception as e:
+        print(f"[!] Failed to fetch or process M3U file: {e}")
+
     return content
 
 
