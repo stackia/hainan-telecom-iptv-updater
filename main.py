@@ -398,10 +398,12 @@ hostname = router.ccca.cc
                         # 查找对应的 TimeShiftURL
                         if multicast_addr in multicast_to_timeshift:
                             timeshift_url = multicast_to_timeshift[multicast_addr]
+                            # 添加额外的参数
+                            new_catchup_source = f"{timeshift_url}&playseek={{utc:YmdHMS}}-{{utcend:YmdHMS}}"
                             # 替换整个 catchup-source
                             line = re.sub(
                                 r'catchup-source="[^"]*"',
-                                f'catchup-source="{timeshift_url}"',
+                                f'catchup-source="{new_catchup_source}"',
                                 line,
                             )
             processed_lines.append(line)
