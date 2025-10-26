@@ -357,7 +357,6 @@ buffer-pool-max-size = 49152
 video-snapshot = yes
 ffmpeg-args = -hwaccel vaapi
 upstream-interface = eth0
-hostname = router.ccca.cc
 
 [bind]
 * 5140
