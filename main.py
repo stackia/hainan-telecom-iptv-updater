@@ -372,6 +372,8 @@ hostname = router.ccca.cc
             multicast_addr = channel["ChannelURL"].replace("igmp://", "")
             multicast_to_timeshift[multicast_addr] = channel["TimeShiftURL"]
 
+    print(f"[*] Built timeshift mapping for {len(multicast_to_timeshift)} channels")
+
     # 抓取远程 M3U 文件
     try:
         m3u_url = "https://gist.githubusercontent.com/stackia/9dba21f67df6cd3226d4776960ee289b/raw/"
@@ -382,30 +384,52 @@ hostname = router.ccca.cc
         # 处理 M3U 内容
         lines = m3u_content.split("\n")
         processed_lines = []
+        current_extinf = None
 
+        matched_count = 0
         for line in lines:
             # 检查是否是 #EXTINF 行
             if line.startswith("#EXTINF"):
-                # 查找 catchup-source
-                if 'catchup-source="rtsp://placeholder/' in line:
-                    # 提取组播地址
-                    match = re.search(
-                        r'catchup-source="rtsp://placeholder/([^"]+)"', line
-                    )
-                    if match:
-                        multicast_addr = match.group(1)
-                        # 查找对应的 TimeShiftURL
-                        if multicast_addr in multicast_to_timeshift:
-                            timeshift_url = multicast_to_timeshift[multicast_addr]
-                            # 添加额外的参数
-                            new_catchup_source = f"{timeshift_url}&playseek={{utc:YmdHMS}}-{{utcend:YmdHMS}}"
-                            # 替换整个 catchup-source
-                            line = re.sub(
-                                r'catchup-source="[^"]*"',
-                                f'catchup-source="{new_catchup_source}"',
-                                line,
+                current_extinf = line
+                # 不要立即添加，等待处理下一行
+            elif line.startswith("rtp://") and current_extinf:
+                # 从 rtp 地址提取组播地址
+                # 例如: rtp://239.253.64.120:5140/?fcc=... -> 239.253.64.120:5140
+                match = re.match(r"rtp://([^/?]+)", line)
+                if match:
+                    multicast_addr = match.group(1)
+                    # 查找对应的 TimeShiftURL
+                    if multicast_addr in multicast_to_timeshift:
+                        timeshift_url = multicast_to_timeshift[multicast_addr]
+                        # 添加 catchup 参数
+                        catchup_source = (
+                            f"{timeshift_url}&playseek={{utc:YmdHMS}}-{{utcend:YmdHMS}}"
+                        )
+                        # 在逗号之前插入 catchup 属性
+                        # 格式: #EXTINF:-1 ... group-title="央视",CCTV-1
+                        # 需要变成: #EXTINF:-1 ... group-title="央视" catchup="default" catchup-source="...",CCTV-1
+                        last_comma = current_extinf.rfind(",")
+                        if last_comma != -1:
+                            current_extinf = (
+                                current_extinf[:last_comma]
+                                + f' catchup="default" catchup-source="{catchup_source}"'
+                                + current_extinf[last_comma:]
                             )
-            processed_lines.append(line)
+                        matched_count += 1
+
+                # 添加处理后的 #EXTINF 行和当前 rtp 行
+                processed_lines.append(current_extinf)
+                processed_lines.append(line)
+                current_extinf = None
+            else:
+                # 如果不是 rtp 行，但之前有 #EXTINF，先添加它
+                if current_extinf:
+                    processed_lines.append(current_extinf)
+                    current_extinf = None
+
+                processed_lines.append(line)
+
+        print(f"[*] Added catchup to {matched_count} channels")
 
         # 将处理后的 M3U 内容添加到 [services] 后面
         content += "\n".join(processed_lines)
