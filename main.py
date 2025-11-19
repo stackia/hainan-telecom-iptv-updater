@@ -66,6 +66,7 @@ def auth_in():
             "TerminalOsType": 0,
             "STBID": "",
             "stbtype": "",
+            "skipSilentUser": 1
         },
     ).text
     encrypt_token = re.search(r"GetAuthInfo\('(.*)'\)", res).group(1)
