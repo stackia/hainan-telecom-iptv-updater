@@ -368,10 +368,11 @@ hostname = router.ccca.cc
     # 构建组播地址到 TimeShiftURL 的映射
     multicast_to_timeshift = {}
     for channel in channels:
-        if channel["TimeShift"] == "1" and channel["TimeShiftURL"]:
+        if channel["ChannelSDP"]:
             # 从 ChannelURL 提取组播地址 (例如: igmp://239.253.64.120:5140 -> 239.253.64.120:5140)
-            multicast_addr = channel["ChannelURL"].replace("igmp://", "")
-            multicast_to_timeshift[multicast_addr] = channel["TimeShiftURL"]
+            [igmp_url, rtsp_url] = channel["ChannelSDP"].split("|")
+            multicast_addr = igmp_url.replace("igmp://", "")
+            multicast_to_timeshift[multicast_addr] = rtsp_url
 
     print(f"[*] Built timeshift mapping for {len(multicast_to_timeshift)} channels")
 
