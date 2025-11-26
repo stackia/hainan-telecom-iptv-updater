@@ -349,22 +349,8 @@ def generate_m3u(channels):
     return "\n".join(m3u)
 
 
-def generate_rtp2httpd_config(channels):
-    content = """[global]
-verbosity = 3
-maxclients = 50
-workers = 4
-buffer-pool-max-size = 49152
-video-snapshot = yes
-ffmpeg-args = -hwaccel vaapi
-upstream-interface = eth3
-hostname = router.ccca.cc
-
-[bind]
-* 5140
-
-[services]
-"""
+def generate_rtp2httpd_m3u(channels):
+    content = ""
     # 构建组播地址到 TimeShiftURL 的映射
     multicast_to_timeshift = {}
     for channel in channels:
@@ -452,7 +438,7 @@ if __name__ == "__main__":
     # with open("web/iptv.m3u", "w") as f:
     #     f.write(generate_m3u(channels))
 
-    with open("web/rtp2httpd.conf", "w") as f:
-        f.write(generate_rtp2httpd_config(channels))
+    with open("web/hainan-telecom-iptv.m3u", "w") as f:
+        f.write(generate_rtp2httpd_m3u(channels))
 
     print("[*]", "Done")
