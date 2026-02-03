@@ -10,6 +10,7 @@ from Crypto.Cipher import DES3
 from Crypto.Util.Padding import unpad, pad
 from xml.etree.ElementTree import Element, SubElement, tostring
 
+
 KEY = "123456".ljust(24, "0")  # 修改六位数字密码
 AUTHENTICATOR = os.environ.get("AUTHENTICATOR", "")  # 用抓包得到的 Authenticator 参数
 
@@ -20,6 +21,21 @@ API_EPG_BASE = "http://10.255.79.11:8080/iptvepg/"
 
 UDPXY_BASE = "http://192.168.1.1:5678/rtp/"
 SERVICE_BASE = "http://192.168.1.1:1234"
+
+# 如果设置了这个值，所有 HTTP 请求都会通过 rtp2httpd 的 HTTP 反代
+# 例如: "http://192.168.1.1:5678" 会把 http://example.com/path 转换为 http://192.168.1.1:5678/http/example.com/path
+RTP2HTTPD_HTTP_PROXY = "http://192.168.50.2:5140"
+
+
+def proxy_url(url):
+    """将 HTTP URL 转换为经过 rtp2httpd 反代的 URL"""
+    if not RTP2HTTPD_HTTP_PROXY or not url.startswith("http://"):
+        return url
+    # 移除 http:// 前缀，构建反代 URL
+    # http://example.com/path -> {RTP2HTTPD_HTTP_PROXY}/http/example.com/path
+    url_without_scheme = url[7:]  # 移除 "http://"
+    return f"{RTP2HTTPD_HTTP_PROXY.rstrip('/')}/http/{url_without_scheme}"
+
 
 COMMON_HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; ChromiumBrowser) AppleWebKit/534.24 (KHTML, like Gecko) Safari/534.24 SkWebKit-HA-CU",
@@ -57,7 +73,7 @@ def auth_in():
         }
     )
     res = requests.get(
-        API_EAS_BASE + "platform/getencrypttoken.jsp",
+        proxy_url(API_EAS_BASE + "platform/getencrypttoken.jsp"),
         headers=headers,
         params={
             "UserID": data[2],
@@ -66,7 +82,7 @@ def auth_in():
             "TerminalOsType": 0,
             "STBID": "",
             "stbtype": "",
-            "skipSilentUser": 1
+            "skipSilentUser": 1,
         },
     ).text
     encrypt_token = re.search(r"GetAuthInfo\('(.*)'\)", res).group(1)
@@ -81,7 +97,7 @@ def auth_in():
     session = requests.Session()
     session.headers.update(COMMON_HEADERS)
     res = session.post(
-        API_EPG_BASE + "platform/auth.jsp",
+        proxy_url(API_EPG_BASE + "platform/auth.jsp"),
         params={"easip": API_EAS_IP, "ipVersion": 4, "networkid": 1},
         data={
             "UserID": data[2],
@@ -93,6 +109,9 @@ def auth_in():
             "StbIP": data[4],
         },
     )
+    session.cookies.set(
+        "JSESSIONID", session.cookies.pop("JSESSIONID")
+    )  # Remove cookie path limitation
 
     # convert server time to local time
     serverTime = datetime.strptime(res.headers["Date"], "%a, %d %b %Y %H:%M:%S %Z")
@@ -105,13 +124,14 @@ def auth_in():
     redirect_url = re.search(r"window\.location(?:\.href)? *= *'(.*)'", res.text).group(
         1
     )
-    session.get(redirect_url)
+    session.get(proxy_url(redirect_url))
+    print(session.cookies.get("JSESSIONID"))
 
     redirect_url = urlsplit(redirect_url)
     params = {k: v[0] for k, v in parse_qs(redirect_url.query).items()}
 
     res = session.post(
-        API_EPG_BASE + "function/funcportalauth.jsp",
+        proxy_url(API_EPG_BASE + "function/funcportalauth.jsp"),
         data={
             "UserToken": params["UserToken"],
             "UserID": params["UserID"],
@@ -164,7 +184,7 @@ def cached_auth_in():
 def request(method, url, retry=True, **kwargs):
     global _session_expire
     session = cached_auth_in()
-    res = session.request(method, url, **kwargs)
+    res = session.request(method, proxy_url(url), **kwargs)
     err = re.search(r"qrcodeerror\.jsp\?errorcode=(\d+)", res.text)
     sessionExp = re.search(r"rebuildsessionresponse\.jsp", res.text)
     if err or sessionExp:
