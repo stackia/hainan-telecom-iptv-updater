@@ -1,15 +1,15 @@
+import json
+import os
 import random
 import re
-import os
-import json
 import time
 from datetime import datetime, timedelta
-import requests
-from urllib.parse import urlsplit, parse_qs
-from Crypto.Cipher import DES3
-from Crypto.Util.Padding import unpad, pad
+from urllib.parse import parse_qs, urlsplit
 from xml.etree.ElementTree import Element, SubElement, tostring
 
+import requests
+from Crypto.Cipher import DES3
+from Crypto.Util.Padding import pad, unpad
 
 KEY = "123456".ljust(24, "0")  # 修改六位数字密码
 AUTHENTICATOR = os.environ.get("AUTHENTICATOR", "")  # 用抓包得到的 Authenticator 参数
@@ -52,8 +52,7 @@ def auth_in():
                 parity ^= (key_byte >> i) & 1
             return (key_byte & 0xFE) | parity
 
-        from Crypto.Util.py3compat import bchr
-        from Crypto.Util.py3compat import bord
+        from Crypto.Util.py3compat import bchr, bord
 
         key_out = b"".join([bchr(parity_byte(bord(x))) for x in key_in])
         return key_out
@@ -410,9 +409,7 @@ def generate_rtp2httpd_m3u(channels):
                     if multicast_addr in multicast_to_timeshift:
                         timeshift_url = multicast_to_timeshift[multicast_addr]
                         # 添加 catchup 参数
-                        catchup_source = (
-                            f"{timeshift_url}&playseek={{utc:YmdHMS}}-{{utcend:YmdHMS}}"
-                        )
+                        catchup_source = f"{timeshift_url}&playseek={{utc:YmdHMS}}-{{utcend:YmdHMS}}&r2h-seek-mode=7200"
                         # 在逗号之前插入 catchup 属性
                         # 格式: #EXTINF:-1 ... group-title="央视",CCTV-1
                         # 需要变成: #EXTINF:-1 ... group-title="央视" catchup="default" catchup-source="...",CCTV-1
