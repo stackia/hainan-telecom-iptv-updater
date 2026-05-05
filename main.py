@@ -414,7 +414,7 @@ def generate_rtp2httpd_m3u(channels):
                             multicast_addr
                         ]
                         # 添加 catchup 参数
-                        catchup_source = f"{timeshift_url}&playseek={{utc:YmdHMS}}-{{utcend:YmdHMS}}&r2h-seek-mode={timeshift_length}"
+                        catchup_source = f"{timeshift_url}&playseek={{utc:YmdHMS}}-{{utcend:YmdHMS}}&r2h-seek-mode=range({timeshift_length})"
                         # 在逗号之前插入 catchup 属性
                         # 格式: #EXTINF:-1 ... group-title="央视",CCTV-1
                         # 需要变成: #EXTINF:-1 ... group-title="央视" catchup="default" catchup-source="...",CCTV-1
