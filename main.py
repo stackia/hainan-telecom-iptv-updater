@@ -377,7 +377,10 @@ def generate_rtp2httpd_m3u(channels):
             # 从 ChannelURL 提取组播地址 (例如: igmp://239.253.64.120:5140 -> 239.253.64.120:5140)
             [igmp_url, rtsp_url] = channel["ChannelSDP"].split("|")
             multicast_addr = igmp_url.replace("igmp://", "")
-            multicast_to_timeshift[multicast_addr] = rtsp_url
+            multicast_to_timeshift[multicast_addr] = (
+                rtsp_url,
+                channel.get("TimeShiftLength", "3600"),
+            )
 
     print(f"[*] Built timeshift mapping for {len(multicast_to_timeshift)} channels")
 
@@ -407,9 +410,11 @@ def generate_rtp2httpd_m3u(channels):
                     multicast_addr = match.group(1)
                     # 查找对应的 TimeShiftURL
                     if multicast_addr in multicast_to_timeshift:
-                        timeshift_url = multicast_to_timeshift[multicast_addr]
+                        timeshift_url, timeshift_length = multicast_to_timeshift[
+                            multicast_addr
+                        ]
                         # 添加 catchup 参数
-                        catchup_source = f"{timeshift_url}&playseek={{utc:YmdHMS}}-{{utcend:YmdHMS}}&r2h-seek-mode=7200"
+                        catchup_source = f"{timeshift_url}&playseek={{utc:YmdHMS}}-{{utcend:YmdHMS}}&r2h-seek-mode={timeshift_length}"
                         # 在逗号之前插入 catchup 属性
                         # 格式: #EXTINF:-1 ... group-title="央视",CCTV-1
                         # 需要变成: #EXTINF:-1 ... group-title="央视" catchup="default" catchup-source="...",CCTV-1
