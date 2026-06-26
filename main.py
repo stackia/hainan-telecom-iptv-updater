@@ -3,6 +3,7 @@ import os
 import random
 import re
 import time
+import unicodedata
 from datetime import datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 from xml.etree.ElementTree import Element, SubElement, tostring
@@ -25,6 +26,202 @@ SERVICE_BASE = "http://192.168.1.1:1234"
 # 如果设置了这个值，所有 HTTP 请求都会通过 rtp2httpd 的 HTTP 反代
 # 例如: "http://192.168.1.1:5678" 会把 http://example.com/path 转换为 http://192.168.1.1:5678/http/example.com/path
 RTP2HTTPD_HTTP_PROXY = "http://192.168.50.2:5140/app/rtp2httpd"
+M3U_SOURCE_URL = (
+    "https://gist.githubusercontent.com/stackia/9dba21f67df6cd3226d4776960ee289b/raw/"
+)
+
+
+def simplify_channel_name(name):
+    name = unicodedata.normalize("NFKC", name).strip()
+    name = re.sub(r"(超高清|高清测试|高清|标清)$", "", name)
+    name = name.replace(" ", "").replace("-", "")
+    name = "".join(
+        ch
+        for ch in unicodedata.normalize("NFKD", name)
+        if not unicodedata.combining(ch)
+    )
+    name = name.upper()
+
+    if name.startswith("IPTV") and len(name) > 4 and name[4] not in "+0123456789":
+        name = name[4:]
+
+    return name
+
+
+RAW_CHANNEL_NAME_EQUIVALENTS = {
+    "CGTN英语": "CGTN",
+    "CGTN英文纪录": "CGTN 纪录",
+    "CGTN西班牙语": "CGTN Español",
+    "CGTN法语": "CGTN Français",
+    "CGTN阿拉伯语": "CGTN العربية",
+    "CGTN俄语": "CGTN РУССКИЙ",
+    "CCTV5高清": "CCTV-5+",
+    "海南社会与法": "海南公共",
+    "海口1台": "海口-1",
+    "海口2台": "海口-2",
+    "海口3台": "海口-3",
+    "三亚1台": "三亚-1",
+    "儋州台": "儋州",
+    "爱电影": "IPTV6+",
+    "爱大剧": "IPTV8+",
+    "爱体育": "IPTV5+",
+    "爱综艺": "IPTV3+",
+    "教育1": "CETV-1",
+    "中国教育1台": "CETV-1",
+    "卡酷少儿": "卡酷动画",
+}
+
+CHANNEL_NAME_EQUIVALENTS = {
+    simplify_channel_name(alias): simplify_channel_name(canonical)
+    for alias, canonical in RAW_CHANNEL_NAME_EQUIVALENTS.items()
+}
+
+
+def canonicalize_channel_name(name):
+    simplified = simplify_channel_name(name)
+    return CHANNEL_NAME_EQUIVALENTS.get(simplified, simplified)
+
+
+def extract_multicast_addr(url):
+    match = re.match(r"^(?:igmp|rtp)://([^/?]+)", url)
+    if match:
+        return match.group(1)
+    return None
+
+
+def parse_m3u_entries(m3u_content):
+    entries = []
+    current_extinf = None
+
+    for line in m3u_content.splitlines():
+        if line.startswith("#EXTINF"):
+            current_extinf = line
+            continue
+
+        if line.startswith("rtp://") and current_extinf:
+            multicast_addr = extract_multicast_addr(line)
+            channel_name = (
+                current_extinf.split(",", 1)[1].strip() if "," in current_extinf else ""
+            )
+            entries.append(
+                {
+                    "extinf": current_extinf,
+                    "url": line,
+                    "multicast_addr": multicast_addr,
+                    "channel_name": channel_name,
+                }
+            )
+            current_extinf = None
+            continue
+
+        if current_extinf and line and not line.startswith("#"):
+            current_extinf = None
+
+    return entries
+
+
+def compare_channel_names(channels, m3u_content):
+    m3u_entries = parse_m3u_entries(m3u_content)
+    m3u_by_addr = {
+        entry["multicast_addr"]: entry
+        for entry in m3u_entries
+        if entry["multicast_addr"]
+    }
+
+    results = []
+    channel_list_only = []
+    channel_addrs = set()
+    summary = {
+        "exact": 0,
+        "equivalent": 0,
+        "mismatch": 0,
+        "channel_list_only": 0,
+        "m3u_only": 0,
+    }
+
+    for channel in channels:
+        multicast_addr = extract_multicast_addr(channel["ChannelURL"])
+        if not multicast_addr:
+            continue
+
+        channel_addrs.add(multicast_addr)
+        result = {
+            "user_channel_id": channel["UserChannelID"],
+            "multicast_addr": multicast_addr,
+            "channel_list_name": channel["ChannelName"],
+            "m3u_name": None,
+            "status": "channel_list_only",
+        }
+
+        m3u_entry = m3u_by_addr.get(multicast_addr)
+        if m3u_entry:
+            result["m3u_name"] = m3u_entry["channel_name"]
+            if channel["ChannelName"] == m3u_entry["channel_name"]:
+                result["status"] = "exact"
+            elif canonicalize_channel_name(
+                channel["ChannelName"]
+            ) == canonicalize_channel_name(m3u_entry["channel_name"]):
+                result["status"] = "equivalent"
+            else:
+                result["status"] = "mismatch"
+        else:
+            channel_list_only.append(
+                {
+                    "user_channel_id": channel["UserChannelID"],
+                    "multicast_addr": multicast_addr,
+                    "channel_list_name": channel["ChannelName"],
+                }
+            )
+
+        summary[result["status"]] += 1
+        results.append(result)
+
+    m3u_only = [
+        {
+            "multicast_addr": entry["multicast_addr"],
+            "m3u_name": entry["channel_name"],
+        }
+        for entry in m3u_entries
+        if entry["multicast_addr"] and entry["multicast_addr"] not in channel_addrs
+    ]
+    summary["m3u_only"] = len(m3u_only)
+
+    return {
+        "summary": summary,
+        "results": results,
+        "channel_list_only": channel_list_only,
+        "m3u_only": m3u_only,
+    }
+
+
+def print_channel_name_comparison(report):
+    mismatches = [
+        result for result in report["results"] if result["status"] == "mismatch"
+    ]
+    channel_list_only = report["channel_list_only"]
+    m3u_only = report["m3u_only"]
+
+    print(f"[*] True channel name mismatches: {len(mismatches)}")
+    for result in mismatches:
+        print(
+            f"[x] {result['user_channel_id']:>4} {result['channel_list_name']} != {result['m3u_name']} ({result['multicast_addr']})"
+        )
+
+    print(f"[*] Only in channel list: {len(channel_list_only)}")
+    for result in channel_list_only:
+        print(
+            f"[<] {result['user_channel_id']:>4} {result['channel_list_name']} ({result['multicast_addr']})"
+        )
+
+    print(f"[*] Only in M3U: {len(m3u_only)}")
+    for result in m3u_only:
+        print(f"[>] {result['m3u_name']} ({result['multicast_addr']})")
+
+
+def fetch_remote_m3u():
+    m3u_response = requests.get(M3U_SOURCE_URL, timeout=10)
+    m3u_response.raise_for_status()
+    return m3u_response.text
 
 
 def proxy_url(url):
@@ -368,7 +565,7 @@ def generate_m3u(channels):
     return "\n".join(m3u)
 
 
-def generate_rtp2httpd_m3u(channels):
+def generate_rtp2httpd_m3u(channels, m3u_content=None):
     content = ""
     # 构建组播地址到 TimeShiftURL 的映射
     multicast_to_timeshift = {}
@@ -376,7 +573,7 @@ def generate_rtp2httpd_m3u(channels):
         if channel["ChannelSDP"]:
             # 从 ChannelURL 提取组播地址 (例如: igmp://239.253.64.120:5140 -> 239.253.64.120:5140)
             [igmp_url, rtsp_url] = channel["ChannelSDP"].split("|")
-            multicast_addr = igmp_url.replace("igmp://", "")
+            multicast_addr = extract_multicast_addr(igmp_url)
             multicast_to_timeshift[multicast_addr] = (
                 rtsp_url,
                 channel.get("TimeShiftLength", "3600"),
@@ -386,10 +583,8 @@ def generate_rtp2httpd_m3u(channels):
 
     # 抓取远程 M3U 文件
     try:
-        m3u_url = "https://gist.githubusercontent.com/stackia/9dba21f67df6cd3226d4776960ee289b/raw/"
-        m3u_response = requests.get(m3u_url, timeout=10)
-        m3u_response.raise_for_status()
-        m3u_content = m3u_response.text
+        if m3u_content is None:
+            m3u_content = fetch_remote_m3u()
 
         # 处理 M3U 内容
         lines = m3u_content.split("\n")
@@ -405,9 +600,8 @@ def generate_rtp2httpd_m3u(channels):
             elif line.startswith("rtp://") and current_extinf:
                 # 从 rtp 地址提取组播地址
                 # 例如: rtp://239.253.64.120:5140/?fcc=... -> 239.253.64.120:5140
-                match = re.match(r"rtp://([^/?]+)", line)
-                if match:
-                    multicast_addr = match.group(1)
+                multicast_addr = extract_multicast_addr(line)
+                if multicast_addr:
                     # 查找对应的 TimeShiftURL
                     if multicast_addr in multicast_to_timeshift:
                         timeshift_url, timeshift_length = multicast_to_timeshift[
@@ -466,7 +660,14 @@ if __name__ == "__main__":
     # with open("web/iptv.m3u", "w") as f:
     #     f.write(generate_m3u(channels))
 
+    m3u_content = None
+    try:
+        m3u_content = fetch_remote_m3u()
+        print_channel_name_comparison(compare_channel_names(channels, m3u_content))
+    except Exception as e:
+        print(f"[!] Failed to fetch or compare M3U file: {e}")
+
     with open("web/hainan-telecom-iptv.m3u", "w") as f:
-        f.write(generate_rtp2httpd_m3u(channels))
+        f.write(generate_rtp2httpd_m3u(channels, m3u_content))
 
     print("[*]", "Done")
