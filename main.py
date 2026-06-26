@@ -24,7 +24,7 @@ SERVICE_BASE = "http://192.168.1.1:1234"
 
 # 如果设置了这个值，所有 HTTP 请求都会通过 rtp2httpd 的 HTTP 反代
 # 例如: "http://192.168.1.1:5678" 会把 http://example.com/path 转换为 http://192.168.1.1:5678/http/example.com/path
-RTP2HTTPD_HTTP_PROXY = "http://192.168.50.2:5140"
+RTP2HTTPD_HTTP_PROXY = "http://192.168.50.2:5140/app/rtp2httpd"
 
 
 def proxy_url(url):
@@ -417,7 +417,7 @@ def generate_rtp2httpd_m3u(channels):
                         catchup_source = (
                             f"{timeshift_url}&playseek={{utc:YmdHMS}}-{{utcend:YmdHMS}}"
                         )
-                        if timeshift_length > 0:
+                        if int(timeshift_length) > 0:
                             catchup_source += (
                                 f"&r2h-seek-mode=range({timeshift_length})"
                             )
