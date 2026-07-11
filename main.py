@@ -605,7 +605,8 @@ def generate_rtp2httpd_m3u(channels, m3u_content=None):
                         catchup_source = (
                             f"{timeshift_url}&playseek={{utc:YmdHMS}}-{{utcend:YmdHMS}}"
                         )
-                        if int(timeshift_length) > 0:
+                        timeshift_length = int(timeshift_length) // 2
+                        if timeshift_length > 0:
                             catchup_source += (
                                 f"&r2h-seek-mode=range({timeshift_length})"
                             )
